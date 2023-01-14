@@ -1,0 +1,159 @@
+
+node:
+
+has inputs that have:
+- 
+@dataclass
+class ActivationIn:
+    source: int
+    activation_amount: float
+    weight: float
+
+
+@dataclass
+class ConnectionOut:
+    source: int
+    feedback: float
+
+
+on each timestep the node goes in and:
+
+The backprop can happen in the same timestep or seperately from the forward prop
+
+- check if it's been activated
+    - sum([activation_amount * weight for input in activation_in])
+    - if it has (>1) then we need to add that work to all of the other nodes
+
+- check if there's feedback to propigate
+    - if there is, then we need to take that feedback level,
+        - adjust all of the input weights accordingly (smaller if negative, larger if positive)
+            - weight *= tanh(signal * lr * activation_amount) + 1
+        - add the backprop work to the nodes so that it backprops
+            - (address, (signal * activation_amount * ?weight?))
+    clears backprop signal
+
+
+decay's the activations
+    - [activation_in_node.amount *= self.decay_speed for activation_in_node in activation_in]
+
+makes new connections
+    - if rand < prob_new:
+        - activation_in += (random_address, random_weight)
+
+trims weak connections
+    - activation_in = [activation for activation in activation_in if activation.weigth > 0.01]
+
+WORKER
+
+checks out a node, calls step
+gets back work
+work:
+    - work creators address
+    - forward: addresses and amounts
+        - goes to each address, and adds amounts to creator addresses activation
+    backward: addresses and amounts
+        - goes to each address, adds the amounts to that nodes feedback 
+
+
+AFTER EACH ROUND
+- if action node has been activated, execute the action
+- put input into input nodes
+
+https://docs.python.org/3/library/queue.html can work for the queue so we can do multithreaded workers
+
+
+
+can do viz with this https://stackoverflow.com/questions/2333025/graphviz-changing-the-size-of-edge ?
+
+
+
+The other option is do do it with a bunch of edges
+- do the input nodes
+    - add the input to the input nodes
+- check all the nodes for activation
+    - the inputs have been added from the edges to the pool
+    - if sum > 1 activate 0 true, else false
+    - zero out activation pool
+- check the output to see if it's output, assign a feedback
+    - if they're activated do the action
+    - if there's a feedback do a bunch of feedback steps, yep :(
+        - omg no it's a breadth first search until we loose signal or come back to the same node...
+            - as we leave a node we set it's feedback to zero...
+            - can we learn if the backprop signal doesnt get back to the input nodes?
+        - for each node:
+            - weight *= tanh(signal * lr * activation_amount) + 1
+            - add signal to the input nodes feedback pool
+
+
+if backprop: (checks every env step)
+- reverse digraph
+- from feedback node run flow_bfs
+    - for each edge: weight *= tanh(signal * lr * activation_amount) + 1
+
+forward prop: (every brain step, 10x enviro?)
+from used subgraph:
+- run flow_bfs from master node
+    for each edge: 
+        - if input is activated
+        - multiply input by weight, 
+        - add that to current activation
+        - add current activation to output activation pool
+- check activation
+    for each node:
+        - if activation input is > 0, set activation to true
+        - reset activation pool
+- time decay edge activations
+
+prune / grow: (happens when lots of negative rewards?)
+- trim
+    - if edge weight < 0.01 delete the edge
+- create new edges
+    - create random edges????? might as well try it I guess...
+- make subgraph of used nodes:
+    - reverse graph, take bfs tree from each input, add those nodes to used nodes set
+    - you can use the nodes from this list to a mask
+        - you can use the mask to wrap the flow-bfs interator, so it would be an iterator with an if statement basically...
+
+mega-prune:
+- do backwards bfs's from outputs
+- this list is all of the used nodes
+- add the master and input nodes to this list
+- now you can go through the edges
+    - if theres an edge that connects to a node not on this list
+        - delete that edge
+
+how about like, if a structure - input to output or something like that - has been positive, then we can't have nodes going into it?
+- like we can have nodes leave it, but if it has a positive feedback overall we don't really want to mess with it...
+
+Can we do something like dopamine for like, the pre reward reward?
+It's what we get for novelty and if we think we're going to get a reward
+Then we have an opiate like reward for the positive env reward?
+
+can add something so that the first few backprop singnals so an edge are really strong...
+
+
+you could do a bfs down from each input and then do the activation stuff and all that after?
+I guess this doesnt actually work though....
+
+only backprop happens with bfs I guess...
+
+https://github.com/networkx/networkx is the future of this, also having the built in plotting sounds bomb af.
+hopefully I can get away with multiprocessing on it if I have to, but in the meantime I can probably get away with this
+Worst case, when I want to scale things up I'll probalby have a better understanding of what I want it to be, so it will be fast to code
+
+
+one way to clear the graph is to reverse the graph and then flow back from the outputs and anyone who's not visited can be pruned
+
+
+you kinda dont want to mess with current and good structures...
+    - one way to do this is to only go out of connected nodes that arent the outputs
+    - This might also just not end up being a problem but it's something to look out for...
+    - we could have something that's really good, and it keeps on new inputs and they're pushed down from it over acting and then
+        they all get made so small that they get trimmed...
+
+- go through all the edges and do the forward and backwards
+    - if the input has been activated add one to the activation amount
+    - multiply the activation amount by the weight and add that to the ouput node activation pool
+    - decay the activation amount
+- add random edges
+- prune weak edges
